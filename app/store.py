@@ -1,10 +1,8 @@
 from typing import Dict, List, Any
+from app.config import DEFAULT_CONFIG, MAX_HISTORY
 
 # Config
-config = {
-    "check_interval_seconds": 30,
-    "request_timeout_ms": 5000
-}
+config = DEFAULT_CONFIG.copy()
 
 def get_config():
     return config.copy()
@@ -17,7 +15,6 @@ def set_config(new_config: dict):
 
 # Proxy Pool
 proxy_map: Dict[str, dict] = {}
-MAX_HISTORY = 1000
 
 def add_proxy(proxy_id: str, url: str):
     proxy_map[proxy_id] = {
