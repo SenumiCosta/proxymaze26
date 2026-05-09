@@ -42,7 +42,6 @@ def read_config():
 
 @app.post("/config")
 async def update_config(req: Request):
-updates
     data = await read_json_object(req)
     config_data = {}
     for key in ["check_interval_seconds", "request_timeout_ms"]:
@@ -56,25 +55,6 @@ updates
             raise HTTPException(status_code=400, detail=f"{key} must be positive")
         config_data[key] = value
 
-
-    try:
-        data = await req.json()
-    except Exception:
-        data = {}
-        
-    config_data = {}
-    if "check_interval_seconds" in data:
-        try:
-            config_data["check_interval_seconds"] = int(data["check_interval_seconds"])
-        except (ValueError, TypeError):
-            pass
-    if "request_timeout_ms" in data:
-        try:
-            config_data["request_timeout_ms"] = int(data["request_timeout_ms"])
-        except (ValueError, TypeError):
-            pass
-            
- main
     set_config(config_data)
     trigger_monitor()
     return get_config()
