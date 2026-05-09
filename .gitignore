@@ -1,30 +1,46 @@
-# Dependencies
-node_modules/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# Environment
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
 .env
 .env.local
-.env.*.local
 
-# Logs
-logs/
-*.log
-npm-debug.log*
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
 
-# OS files
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Build & Coverage
+# Build/Dist
+build/
+develop-eggs/
 dist/
-coverage/
-
-# Misc
-*.tgz
-.cache/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
