@@ -1,7 +1,19 @@
-from fastapi import FastAPI, HTTPException, Request
+import json
 from contextlib import asynccontextmanager
 
-from app.store import get_config, set_config, add_proxy, clear_pool, get_pool_stats, get_all_proxies, get_proxy, metrics
+from fastapi import FastAPI, HTTPException, Request
+
+from app.store import (
+    add_proxy,
+    clear_pool,
+    get_all_proxies,
+    get_config,
+    get_metrics,
+    get_pool_stats,
+    get_proxy,
+    set_config,
+    state_lock,
+)
 from app.alert_manager import get_alerts, evaluate
 from app.webhook_manager import register_webhook, register_integration
 from app.monitor import start_monitor, stop_monitor, trigger_monitor
@@ -11,7 +23,7 @@ from app.utils import extract_proxy_id
 async def lifespan(app: FastAPI):
     start_monitor()
     yield
-    stop_monitor()
+    await stop_monitor()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -30,47 +42,65 @@ def read_config():
 
 @app.post("/config")
 async def update_config(req: Request):
-    try:
-        data = await req.json()
-    except Exception:
-        data = {}
-    # Filter out None/unset to behave like exclude_unset
-    config_data = {k: v for k, v in data.items() if k in ["check_interval_seconds", "request_timeout_ms"]}
+    data = await read_json_object(req)
+    config_data = {}
+    for key in ["check_interval_seconds", "request_timeout_ms"]:
+        if key not in data or data[key] is None:
+            continue
+        try:
+            value = int(data[key])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{key} must be an integer")
+        if value <= 0:
+            raise HTTPException(status_code=400, detail=f"{key} must be positive")
+        config_data[key] = value
+
     set_config(config_data)
     trigger_monitor()
     return get_config()
 
 @app.post("/proxies", status_code=201)
 async def load_proxies(req: Request):
-    try:
-        data = await req.json()
-    except Exception:
-        data = {}
+    data = await read_json_object(req)
     replace = data.get("replace", False)
     proxies = data.get("proxies", [])
-    
-    if replace:
-        clear_pool()
-    
+    if proxies is None:
+        proxies = []
+    if not isinstance(proxies, list):
+        raise HTTPException(status_code=400, detail="proxies must be an array")
+
     accepted = 0
     added_proxies = []
-    
-    for url in proxies:
-        pid = extract_proxy_id(url)
-        if not pid:
-            continue
-        proxy = add_proxy(pid, url)
-        accepted += 1
-        added_proxies.append({"id": proxy["id"], "url": proxy["url"], "status": proxy["status"]})
-        
-    evaluate(get_all_proxies())
+
+    with state_lock:
+        if replace:
+            clear_pool()
+
+        for url in proxies:
+            if not isinstance(url, str) or not url.strip():
+                continue
+            clean_url = url.strip()
+            pid = extract_proxy_id(clean_url)
+            if not pid:
+                continue
+            proxy = add_proxy(pid, clean_url)
+            accepted += 1
+            added_proxies.append({"id": proxy["id"], "url": proxy["url"], "status": proxy["status"]})
+
+        evaluate(get_all_proxies())
+
+    if accepted > 0 or replace:
+        trigger_monitor()
     return {"accepted": accepted, "proxies": added_proxies}
 
 @app.get("/proxies")
 def read_proxies():
-    stats = get_pool_stats()
+    with state_lock:
+        stats = get_pool_stats()
+        current_proxies = get_all_proxies()
+
     proxies = []
-    for p in get_all_proxies():
+    for p in current_proxies:
         proxies.append({
             "id": p["id"],
             "url": p["url"],
@@ -108,9 +138,11 @@ def read_proxy_history(proxy_id: str):
     return proxy["history"]
 
 @app.delete("/proxies", status_code=204)
-def delete_proxies():
-    clear_pool()
-    evaluate(get_all_proxies())
+async def delete_proxies():
+    with state_lock:
+        clear_pool()
+        evaluate([])
+    trigger_monitor()
 
 @app.get("/alerts")
 def read_alerts():
@@ -118,30 +150,45 @@ def read_alerts():
 
 @app.post("/webhooks", status_code=201)
 async def add_webhook(req: Request):
+    data = await read_json_object(req)
     try:
-        data = await req.json()
-    except Exception:
-        data = {}
-    return register_webhook(data.get("url"))
+        return register_webhook(data.get("url"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @app.post("/integrations", status_code=201)
 async def add_integration(req: Request):
+    data = await read_json_object(req)
     try:
-        data = await req.json()
-    except Exception:
-        data = {}
-    return register_integration(data)
+        return register_integration(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @app.get("/metrics")
 def read_metrics():
-    stats = get_pool_stats()
-    alerts = get_alerts()
+    with state_lock:
+        stats = get_pool_stats()
+        alerts = get_alerts()
+        current_metrics = get_metrics()
+
     active_alerts = sum(1 for a in alerts if a["status"] == "active")
     
     return {
-        "total_checks": metrics["total_checks"],
+        "total_checks": current_metrics["total_checks"],
         "current_pool_size": stats["total"],
         "active_alerts": active_alerts,
         "total_alerts": len(alerts),
-        "webhook_deliveries": metrics["webhook_deliveries"]
+        "webhook_deliveries": current_metrics["webhook_deliveries"]
     }
+
+async def read_json_object(req: Request):
+    body = await req.body()
+    if not body:
+        return {}
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Malformed JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    return data
