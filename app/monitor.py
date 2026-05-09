@@ -52,7 +52,6 @@ async def monitor_loop():
 
     async with httpx.AsyncClient(follow_redirects=False, verify=False, trust_env=False) as client:
         while is_running:
- updates
             config_event.clear()
             config = get_config()
             snapshot = get_proxy_snapshot()
@@ -70,27 +69,10 @@ async def monitor_loop():
                     evaluate([])
 
             config = get_config()
- main
             try:
-                config = get_config()
-                snapshot = get_all_proxies()
-                
-                if snapshot:
-                    tasks = [check_proxy(client, p, config) for p in snapshot]
-                    updates = await asyncio.gather(*tasks, return_exceptions=True)
-                    
-                    valid_updates = [u for u in updates if not isinstance(u, Exception)]
-                    apply_updates(valid_updates)
-                    evaluate(get_all_proxies())
-                    
-                config_event.clear()
-                try:
-                    interval = int(config.get("check_interval_seconds", 30))
-                    await asyncio.wait_for(config_event.wait(), timeout=interval)
-                except asyncio.TimeoutError:
-                    pass
-            except Exception:
-                await asyncio.sleep(1)
+                await asyncio.wait_for(config_event.wait(), timeout=config["check_interval_seconds"])
+            except asyncio.TimeoutError:
+                pass
 
 def start_monitor():
     global config_event, monitor_loop_ref, monitor_task
