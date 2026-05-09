@@ -8,13 +8,13 @@ def extract_proxy_id(url_str: str) -> str | None:
         path = parsed.path
         segments = [s for s in path.split('/') if s]
         if not segments:
-            return None
+            return parsed.hostname or None
         return segments[-1]
     except Exception:
         return None
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 def to_unix_epoch(iso_string: str) -> int:
     try:
