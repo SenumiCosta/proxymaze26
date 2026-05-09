@@ -16,6 +16,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+@app.get("/")
+@app.head("/")
+def root():
+    return {"message": "ProxyMaze'26 API is running!"}
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
