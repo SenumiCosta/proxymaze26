@@ -34,8 +34,19 @@ async def update_config(req: Request):
         data = await req.json()
     except Exception:
         data = {}
-    # Filter out None/unset to behave like exclude_unset
-    config_data = {k: v for k, v in data.items() if k in ["check_interval_seconds", "request_timeout_ms"]}
+        
+    config_data = {}
+    if "check_interval_seconds" in data:
+        try:
+            config_data["check_interval_seconds"] = int(data["check_interval_seconds"])
+        except (ValueError, TypeError):
+            pass
+    if "request_timeout_ms" in data:
+        try:
+            config_data["request_timeout_ms"] = int(data["request_timeout_ms"])
+        except (ValueError, TypeError):
+            pass
+            
     set_config(config_data)
     trigger_monitor()
     return get_config()
