@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: proxymaze26
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
