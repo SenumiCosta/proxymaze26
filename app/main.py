@@ -1,11 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from contextlib import asynccontextmanager
 
-from app.models import ConfigModel, ProxyPostRequest, WebhookRequest, IntegrationRequest
 from app.store import get_config, set_config, add_proxy, clear_pool, get_pool_stats, get_all_proxies, get_proxy, metrics
 from app.alert_manager import get_alerts, evaluate
 from app.webhook_manager import register_webhook, register_integration
-from app.monitor import start_monitor, stop_monitor
+from app.monitor import start_monitor, stop_monitor, trigger_monitor
 from app.utils import extract_proxy_id
 
 @asynccontextmanager
@@ -30,19 +29,33 @@ def read_config():
     return get_config()
 
 @app.post("/config")
-def update_config(config: ConfigModel):
-    set_config(config.model_dump(exclude_unset=True))
+async def update_config(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    # Filter out None/unset to behave like exclude_unset
+    config_data = {k: v for k, v in data.items() if k in ["check_interval_seconds", "request_timeout_ms"]}
+    set_config(config_data)
+    trigger_monitor()
     return get_config()
 
 @app.post("/proxies", status_code=201)
-def load_proxies(req: ProxyPostRequest):
-    if req.replace:
+async def load_proxies(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    replace = data.get("replace", False)
+    proxies = data.get("proxies", [])
+    
+    if replace:
         clear_pool()
     
     accepted = 0
     added_proxies = []
     
-    for url in req.proxies:
+    for url in proxies:
         pid = extract_proxy_id(url)
         if not pid:
             continue
@@ -104,12 +117,20 @@ def read_alerts():
     return get_alerts()
 
 @app.post("/webhooks", status_code=201)
-def add_webhook(req: WebhookRequest):
-    return register_webhook(req.url)
+async def add_webhook(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return register_webhook(data.get("url"))
 
 @app.post("/integrations", status_code=201)
-def add_integration(req: IntegrationRequest):
-    return register_integration(req.model_dump())
+async def add_integration(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return register_integration(data)
 
 @app.get("/metrics")
 def read_metrics():

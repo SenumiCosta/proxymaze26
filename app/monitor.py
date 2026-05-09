@@ -7,6 +7,10 @@ from app.utils import now_iso
 monitor_task = None
 is_running = False
 semaphore = asyncio.Semaphore(50)
+config_event = asyncio.Event()
+
+def trigger_monitor():
+    config_event.set()
 
 async def check_proxy(client: httpx.AsyncClient, proxy: dict, config: dict):
     async with semaphore:
@@ -46,7 +50,11 @@ async def monitor_loop():
                 apply_updates(valid_updates)
                 evaluate(get_all_proxies())
                 
-            await asyncio.sleep(config["check_interval_seconds"])
+            config_event.clear()
+            try:
+                await asyncio.wait_for(config_event.wait(), timeout=config["check_interval_seconds"])
+            except asyncio.TimeoutError:
+                pass
 
 def start_monitor():
     global monitor_task
@@ -56,3 +64,4 @@ def start_monitor():
 def stop_monitor():
     global is_running
     is_running = False
+    config_event.set()
